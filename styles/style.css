@@ -390,6 +390,51 @@ html, body {
   color: rgba(255, 255, 255, 0.45);
 }
 
+/* ── Gesture onboarding card styles (Phase 5) ────────────────── */
+.onboarding-title {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.50);
+}
+
+.onboarding-gestures {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.onboarding-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.onboarding-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.onboarding-text {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+}
+
+.onboarding-text strong {
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.10em;
+}
+
+.onboarding-alt {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.30);
+  letter-spacing: 0.06em;
+}
+
 /* ── Utilities ───────────────────────────────────────────────── */
 .hidden {
   display: none !important;

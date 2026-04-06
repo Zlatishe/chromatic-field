@@ -37,6 +37,10 @@ export class UI {
 
     // Track current active swatch index
     this._activeSwatch = -1;
+
+    // Onboarding state (Phase 5)
+    this._onboardingShown = false;
+    this._onboardingTimer = null;
   }
 
   // ── Permission card ────────────────────────────────────────────
@@ -68,6 +72,34 @@ export class UI {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       this.webglError.classList.add('card-show');
     }));
+  }
+
+  // ── Gesture onboarding (Phase 5) ───────────────────────────────
+
+  /**
+   * Show gesture onboarding card. Auto-dismisses after 6s or on first
+   * hand detection. One per session. GOT IT button dismisses manually.
+   */
+  showOnboarding() {
+    if (this._onboardingShown) return;
+    this._onboardingShown = true;
+    const card = document.getElementById('onboarding-card');
+    const btn  = document.getElementById('onboarding-btn');
+    if (!card) return;
+    card.classList.remove('hidden', 'card-hide');
+    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add('card-show')));
+    this._onboardingTimer = setTimeout(() => this.hideOnboarding(), 6000);
+    btn?.addEventListener('click', () => this.hideOnboarding(), { once: true });
+  }
+
+  /** Dismiss onboarding card — idempotent, safe to call multiple times. */
+  hideOnboarding() {
+    clearTimeout(this._onboardingTimer);
+    const card = document.getElementById('onboarding-card');
+    if (!card || !card.classList.contains('card-show')) return;
+    card.classList.remove('card-show');
+    card.classList.add('card-hide');
+    setTimeout(() => card.classList.add('hidden'), 450);
   }
 
   // ── Loading indicator ──────────────────────────────────────────

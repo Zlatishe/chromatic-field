@@ -171,12 +171,18 @@ async function handleEnableCamera() {
   // Model ready — wire result callback + update status
   tracker.onResult = handleLandmarks;
   ui.updateLoading('SHOW YOUR HAND');
+
+  // Phase 5 — show gesture onboarding 800ms after SHOW YOUR HAND
+  setTimeout(() => ui.showOnboarding(), 800);
 }
 
 // ═════════════════════════════════════════════════════════════
 //  LANDMARK PIPELINE: tracker → gesture → FSM
 // ═════════════════════════════════════════════════════════════
 function handleLandmarks(landmarks) {
+  // Phase 5 — dismiss onboarding on first hand detection
+  ui.hideOnboarding();
+
   const result = detector.detect(landmarks);
 
   if (result.gesture === GESTURE.IDLE) {
