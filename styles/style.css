@@ -114,9 +114,44 @@ html, body {
   flex-shrink: 0;
 }
 
+/* ── Color count button (Phase 3) ────────────────────────────── */
 #color-count {
-  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px 10px;
+  background: none;
+  border: none;
+  border-radius: 8px;
   cursor: pointer;
+  pointer-events: auto;
+  font-family: inherit;
+  flex-shrink: 0;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+#color-count:active {
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.96);
+}
+
+#color-count-num {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.90);
+  line-height: 1;
+}
+
+.count-label {
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.40);
 }
 
 /* Name flash on palette change */

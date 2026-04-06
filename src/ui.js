@@ -15,7 +15,8 @@ export class UI {
     // Bottom bar elements
     this.bottomBar       = document.getElementById('bottom-bar');
     this.paletteName     = document.getElementById('palette-name');
-    this.colorCount      = document.getElementById('color-count');
+    this.colorCount      = document.getElementById('color-count');     // <button>
+    this.colorCountNum   = document.getElementById('color-count-num'); // inner number span
     this.swatchContainer = document.getElementById('color-swatches');
 
     // Cards
@@ -138,7 +139,9 @@ export class UI {
     setTimeout(() => this.paletteName.classList.remove('name-flash'), 300);
     this.paletteName.textContent = palette.name;
 
-    this.colorCount.textContent = `COLORS: ${String(count).padStart(2, '0')}`;
+    if (this.colorCountNum) {
+      this.colorCountNum.textContent = String(count).padStart(2, '0');
+    }
 
     const colors = palette.colors[count];
     this.swatchContainer.innerHTML = '';
