@@ -250,9 +250,25 @@ export class UI {
     }, { passive: true });
   }
 
-  /** Register tap callback for the color-count label. */
+  /** Register tap callback for the color-count button. */
   onColorCountTap(fn) {
     this.colorCount.addEventListener('click', fn);
+  }
+
+  /** Register previous-palette chevron tap (Phase 4). */
+  onNavPrev(fn) {
+    document.getElementById('nav-prev')?.addEventListener('click', e => {
+      e.stopPropagation();
+      fn();
+    });
+  }
+
+  /** Register next-palette chevron tap (Phase 4). */
+  onNavNext(fn) {
+    document.getElementById('nav-next')?.addEventListener('click', e => {
+      e.stopPropagation();
+      fn();
+    });
   }
 
   /** Register the enable-camera button handler (fires at most once). */

@@ -316,6 +316,10 @@ function wireTouchFallback() {
   );
 
   ui.onColorCountTap(() => { palettes.cycleColorCount(); });
+
+  // Phase 4 — chevron tap handlers
+  ui.onNavPrev(() => { palettes.prevPalette(); });
+  ui.onNavNext(() => { palettes.nextPalette(); });
 }
 
 // ═════════════════════════════════════════════════════════════

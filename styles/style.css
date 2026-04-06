@@ -114,6 +114,36 @@ html, body {
   flex-shrink: 0;
 }
 
+/* ── Palette navigation chevrons (Phase 4) ───────────────────── */
+#palette-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.nav-chevron {
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.30);
+  background: none;
+  border: none;
+  padding: 0 4px;
+  min-width: 28px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 0.15s ease;
+}
+
+.nav-chevron:active {
+  color: rgba(255, 255, 255, 0.80);
+}
+
 /* ── Color count button (Phase 3) ────────────────────────────── */
 #color-count {
   display: flex;

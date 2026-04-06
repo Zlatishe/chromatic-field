@@ -48,7 +48,11 @@
       The ::before and ::after decorative dots are pure CSS.
     -->
     <div id="bottom-bar">
-      <span id="palette-name">VIBRANT_SYNC</span>
+      <div id="palette-nav">
+        <button class="nav-chevron" id="nav-prev" aria-label="Previous palette">‹</button>
+        <span id="palette-name">VIBRANT_SYNC</span>
+        <button class="nav-chevron" id="nav-next" aria-label="Next palette">›</button>
+      </div>
       <div id="color-swatches"></div>
       <button id="color-count" aria-label="Cycle color count">
         <span id="color-count-num">05</span>
