@@ -330,6 +330,16 @@ html, body {
   display: none !important;
 }
 
+/* ── Desktop responsive (≥768px) ────────────────────────────── */
+@media (min-width: 768px) {
+  #bottom-bar {
+    max-width: 480px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+}
+
 /* ── Accessibility ───────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
