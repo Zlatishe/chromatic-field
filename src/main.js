@@ -201,8 +201,11 @@ fsm.onTransition((from, to, data) => {
   switch (to) {
 
     case GESTURE.IDLE:
+      // Unlock and release — colours return to gentle drift around placed positions
+      renderer.unlockAll();
       renderer.releaseAllSources();
       overlay.clearDots();
+      overlay.setLockedPositions([]);
       ui.collapseBar();
       ui.clearSwatchHighlight();
       break;
@@ -211,8 +214,9 @@ fsm.onTransition((from, to, data) => {
       // Hide loading indicator on first-ever hand detection
       ui.hideLoading();
 
+      // Grab the 2 nearest unlocked colour sources to the finger positions
       if (data?.indexTip && data?.middleTip) {
-        renderer.bindSources([data.indexTip, data.middleTip]);
+        renderer.grabNearestUnlocked([data.indexTip, data.middleTip]);
       }
 
       // Coming from MENU: palette confirmed, collapse bar
@@ -226,10 +230,8 @@ fsm.onTransition((from, to, data) => {
     case GESTURE.PINCH:
       ui.hideLoading();
 
-      if (data?.pinchMidpoint) {
-        renderer.bindSources([data.pinchMidpoint]);
-        renderer.releaseSourcesFrom(1);
-      }
+      // PINCH = "stamp" — lock the currently grabbed colours at their positions
+      renderer.lockBoundSources();
 
       // Coming from MENU: palette confirmed, collapse bar
       if (from === GESTURE.MENU) {
@@ -242,7 +244,7 @@ fsm.onTransition((from, to, data) => {
     case GESTURE.MENU:
       ui.hideLoading();
       ui.expandBar();
-      ui.showMenuTrack(palettes.palettes.length, palettes.currentIndex);
+      ui.showMenuTrack(palettes.palettes.length, palettes.currentIndex, palettes.colorCount);
       break;
   }
 });
@@ -257,40 +259,42 @@ function updateOverlay(result) {
     case GESTURE.SPREAD:
       if (indexTip && middleTip) {
         overlay.setDots([
-          { ...indexTip,  label: `[ X: ${fmt(indexTip.x)} // Y: ${fmt(indexTip.y)} ]` },
-          { ...middleTip, label: '[ SPREAD ]' },
+          { ...indexTip,  label: '[ MOVE COLORS ]' },
+          { ...middleTip, label: `X: ${fmt(middleTip.x)} // Y: ${fmt(middleTip.y)}`, sublabel: true },
         ]);
-        renderer.bindSources([indexTip, middleTip]);
+        // Update positions of the currently grabbed colour sources
+        renderer.updateControlledPositions([indexTip, middleTip]);
       }
       break;
 
     case GESTURE.PINCH:
       if (pinchMidpoint) {
         overlay.setDots([
-          { ...pinchMidpoint,
-            label: `[ X: ${fmt(pinchMidpoint.x)} // Y: ${fmt(pinchMidpoint.y)} ]`,
-            pinch: true },
+          { ...pinchMidpoint, label: '[ PLACED ]', pinch: true },
         ]);
-        renderer.bindSources([pinchMidpoint]);
+        // Colours are locked — no renderer bind needed
       }
       break;
 
     case GESTURE.MENU:
       if (pinchMidpoint) {
         overlay.setDots([
-          { ...pinchMidpoint, label: '[ MENU ]', pinch: true },
+          { ...pinchMidpoint, label: '[ SELECT PALETTE ]', pinch: true },
         ]);
-        renderer.bindSources([pinchMidpoint]);
-        handleMenuScrub(result.scrubX);
+        // Colours stay locked during menu — no renderer bind
+        handleMenuScrub(result.scrubX, result.scrubY);
       }
       break;
   }
+
+  // Feed locked positions to overlay every tracker frame
+  overlay.setLockedPositions(renderer.getLockedPositions());
 }
 
 // ═════════════════════════════════════════════════════════════
 //  PALETTE SCRUB (MENU state)
 // ═════════════════════════════════════════════════════════════
-function handleMenuScrub(scrubX) {
+function handleMenuScrub(scrubX, scrubY = null) {
   if (scrubX === null) return;
 
   // Update scrub cursor position on the bar track

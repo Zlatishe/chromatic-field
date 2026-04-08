@@ -40,9 +40,12 @@ export class OverlayRenderer {
     this.canvas = canvas;
     this.ctx    = canvas.getContext('2d');
 
-    // Canonical (target) dots: [{x,y,label?,pinch?}] normalised [0,1]
+    // Canonical (target) dots: [{x,y,label?,pinch?,sublabel?}] normalised [0,1]
     this._dots     = [];
     this._prevDots = [];   // for stillness detection
+
+    // Locked source positions — draw faint pulsing rings (R3.2)
+    this._lockedPositions = [];
 
     // Fade envelope
     this._opacity       = 0;
@@ -122,6 +125,15 @@ export class OverlayRenderer {
     this._startFade(0);
   }
 
+  /**
+   * Set positions of locked colour sources — drawn as faint pulsing rings.
+   * Call every render frame from the master loop.
+   * @param {Array<{x:number,y:number}>} positions
+   */
+  setLockedPositions(positions) {
+    this._lockedPositions = positions;
+  }
+
   /** Resize to match display. Call on init and window resize. */
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -158,6 +170,20 @@ export class OverlayRenderer {
 
     ctx.save();
     ctx.globalAlpha = this._opacity;
+
+    // ── Locked source rings (R3.2) ─────────────────────────────
+    // Faint pulsing circles mark where the user has "stamped" a colour
+    if (this._lockedPositions.length > 0) {
+      const tRing    = (now - this._startMs) / 2000;
+      const ringAlpha = 0.18 + 0.10 * Math.sin(tRing * Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,255,255,${ringAlpha})`;
+      ctx.lineWidth   = dpr * 0.75;
+      this._lockedPositions.forEach(pos => {
+        ctx.beginPath();
+        ctx.arc(pos.x * W, pos.y * H, 9 * dpr, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+    }
 
     // ── Connecting line ────────────────────────────────────────
     if (display.length >= 2) {
