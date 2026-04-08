@@ -320,23 +320,31 @@ function updateOverlay(result) {
 function handleMenuScrub(scrubX, scrubY = null) {
   if (scrubX === null) return;
 
-  // Update scrub cursor position on the bar track
+  // ── Horizontal: palette selection ───────────────────────────
   ui.updateMenuCursor(scrubX);
 
-  // Map to palette index
   const n   = palettes.palettes.length;
   const idx = Math.min(Math.floor(scrubX * n), n - 1);
-  if (idx === _lastScrubIdx) return;
+  if (idx !== _lastScrubIdx) {
+    _lastScrubIdx         = idx;
+    palettes.currentIndex = idx;
+    ui.highlightSwatch(idx % palettes.currentColors.length);
+    // Live preview — 400ms transition per PRD; bypass onChange (direct call)
+    renderer.transitionToColors(palettes.currentColors, 400);
+    ui.updatePalette(palettes.current, palettes.colorCount);
+  }
 
-  _lastScrubIdx         = idx;
-  palettes.currentIndex = idx;
-
-  // Highlight the matching swatch
-  ui.highlightSwatch(idx % palettes.currentColors.length);
-
-  // Live preview — 400ms transition per PRD; bypass onChange (direct call)
-  renderer.transitionToColors(palettes.currentColors, 400);
-  ui.updatePalette(palettes.current, palettes.colorCount);
+  // ── Vertical: colour count (within menu zone 0.78 → 0.95) ───
+  // y at 0.78 (top of zone) → 3 colours; y at 0.95 (bottom) → 5 colours
+  if (scrubY !== null) {
+    const yNorm    = Math.max(0, Math.min(1, (scrubY - 0.78) / (0.95 - 0.78)));
+    const countIdx = Math.round(yNorm * 2);   // 0 = 3 colours, 1 = 4, 2 = 5
+    const newCount = [3, 4, 5][countIdx];
+    if (newCount !== palettes.colorCount) {
+      palettes.setColorCount(newCount);       // fires onChange → renderer + ui
+      ui.highlightCountOption(countIdx);
+    }
+  }
 }
 
 // ═════════════════════════════════════════════════════════════

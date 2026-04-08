@@ -41,6 +41,16 @@ export class PaletteManager {
     this._emit('count');
   }
 
+  /**
+   * Set colour count directly (3, 4, or 5). No-op if already at that count.
+   * @param {3|4|5} n
+   */
+  setColorCount(n) {
+    if (![3, 4, 5].includes(n) || n === this.colorCount) return;
+    this.colorCount = n;
+    this._emit('count');
+  }
+
   /** Go to next palette with 'palette' event type. */
   nextPalette() {
     this.currentIndex = (this.currentIndex + 1) % this.palettes.length;

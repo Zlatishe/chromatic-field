@@ -28,9 +28,11 @@ export class UI {
     // Loading indicator (injected into the bar)
     this._loadingEl = null;
 
-    // Menu track elements (injected into the bar when needed)
-    this._trackEl  = null;
-    this._cursorEl = null;
+    // Menu track elements (injected above the bar when needed)
+    this._trackContainer = null;
+    this._trackEl        = null;   // the rail div inside the container
+    this._cursorEl       = null;
+    this._countLabels    = null;   // the 3/4/5 vertical labels
 
     // Guard: enable-camera button fires only once
     this._cameraListenerAttached = false;
@@ -215,19 +217,24 @@ export class UI {
   }
 
   /**
-   * Show the horizontal palette-scrub track inside the expanded bar.
-   * Creates tick marks for each palette and a moveable cursor.
+   * Show the palette/count scrub track floating above the bar.
+   * Left section: horizontal tick rail for palette selection.
+   * Right section: 3 · 4 · 5 vertical labels for colour count.
    * @param {number} numPalettes
    * @param {number} currentIndex
+   * @param {3|4|5} currentColorCount
    */
-  showMenuTrack(numPalettes, currentIndex = 0) {
+  showMenuTrack(numPalettes, currentIndex = 0, currentColorCount = 3) {
     this._removeTrack(); // clean up any previous
 
-    // Track rail
-    this._trackEl = document.createElement('div');
-    this._trackEl.className = 'bar-track';
+    // Outer container — appended to #ui-root, not the bar
+    this._trackContainer = document.createElement('div');
+    this._trackContainer.className = 'menu-track-container';
 
-    // Tick marks at each palette position
+    // ── Horizontal palette tick rail ─────────────────────────────
+    this._trackEl = document.createElement('div');
+    this._trackEl.className = 'menu-track-rail';
+
     for (let i = 0; i < numPalettes; i++) {
       const tick = document.createElement('span');
       tick.className = 'bar-tick';
@@ -235,19 +242,43 @@ export class UI {
       this._trackEl.appendChild(tick);
     }
 
-    // Cursor
+    // Scrub cursor
     this._cursorEl = document.createElement('span');
     this._cursorEl.className = 'bar-cursor';
     this._trackEl.appendChild(this._cursorEl);
 
-    this.bottomBar.appendChild(this._trackEl);
+    // ── Vertical colour count labels: 3 · 4 · 5 ─────────────────
+    this._countLabels = document.createElement('div');
+    this._countLabels.className = 'menu-count-labels';
+    [3, 4, 5].forEach(n => {
+      const label = document.createElement('span');
+      label.className = 'menu-count-option' + (n === currentColorCount ? ' active' : '');
+      label.textContent = String(n);
+      this._countLabels.appendChild(label);
+    });
 
-    // Trigger entrance
+    this._trackContainer.appendChild(this._trackEl);
+    this._trackContainer.appendChild(this._countLabels);
+
+    // Append to #ui-root so it floats above the bar
+    document.getElementById('ui-root').appendChild(this._trackContainer);
+
+    // Fade in
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      this._trackEl?.classList.add('bar-track-show');
+      this._trackContainer?.classList.add('show');
     }));
 
     this.updateMenuCursor(currentIndex / Math.max(numPalettes - 1, 1));
+  }
+
+  /**
+   * Highlight a colour count option (0 = 3 colours, 1 = 4, 2 = 5).
+   * @param {number} idx  0, 1, or 2
+   */
+  highlightCountOption(idx) {
+    if (!this._countLabels) return;
+    const options = this._countLabels.querySelectorAll('.menu-count-option');
+    options.forEach((el, i) => el.classList.toggle('active', i === idx));
   }
 
   /**
@@ -261,9 +292,11 @@ export class UI {
   }
 
   _removeTrack() {
-    this._trackEl?.remove();
-    this._trackEl  = null;
-    this._cursorEl = null;
+    this._trackContainer?.remove();
+    this._trackContainer = null;
+    this._trackEl        = null;
+    this._cursorEl       = null;
+    this._countLabels    = null;
   }
 
   // ── Touch fallback (T6.4 / T6.5) ──────────────────────────────
