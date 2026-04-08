@@ -240,7 +240,7 @@ fsm.onTransition((from, to, data) => {
     case GESTURE.MENU:
       ui.hideLoading();
       ui.expandBar();
-      ui.showMenuTrack(palettes.palettes.length, palettes.currentIndex, palettes.colorCount);
+      ui.showMenuTrack(palettes.palettes.length, palettes.currentIndex);
       break;
   }
 });
@@ -304,10 +304,10 @@ function updateOverlay(result) {
 // ═════════════════════════════════════════════════════════════
 //  PALETTE SCRUB (MENU state)
 // ═════════════════════════════════════════════════════════════
-function handleMenuScrub(scrubX, scrubY = null) {
+function handleMenuScrub(scrubX) {
   if (scrubX === null) return;
 
-  // ── Horizontal: palette selection ───────────────────────────
+  // Horizontal: palette selection only
   ui.updateMenuCursor(scrubX);
 
   const n   = palettes.palettes.length;
@@ -316,21 +316,9 @@ function handleMenuScrub(scrubX, scrubY = null) {
     _lastScrubIdx         = idx;
     palettes.currentIndex = idx;
     ui.highlightSwatch(idx % palettes.currentColors.length);
-    // Live preview — 400ms transition per PRD; bypass onChange (direct call)
+    // Live preview — 400ms transition; bypass onChange (direct call)
     renderer.transitionToColors(palettes.currentColors, 400);
     ui.updatePalette(palettes.current, palettes.colorCount);
-  }
-
-  // ── Vertical: colour count (within menu zone 0.78 → 0.95) ───
-  // y at 0.78 (top of zone) → 3 colours; y at 0.95 (bottom) → 5 colours
-  if (scrubY !== null) {
-    const yNorm    = Math.max(0, Math.min(1, (scrubY - 0.78) / (0.95 - 0.78)));
-    const countIdx = Math.round(yNorm * 2);   // 0 = 3 colours, 1 = 4, 2 = 5
-    const newCount = [3, 4, 5][countIdx];
-    if (newCount !== palettes.colorCount) {
-      palettes.setColorCount(newCount);       // fires onChange → renderer + ui
-      ui.highlightCountOption(countIdx);
-    }
   }
 }
 

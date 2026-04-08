@@ -28,9 +28,11 @@ const IDX = Object.freeze({
 });
 
 // ── Thresholds ─────────────────────────────────────────────────
-const PINCH_THRESHOLD  = 0.05;  // normalized distance
+const PINCH_THRESHOLD = 0.05;   // normalized distance
 const SPREAD_THRESHOLD = 0.08;  // normalized distance
-const MENU_Y_THRESHOLD = 0.78;  // normalized y — bottom 22% of screen (was 0.85 / 15%)
+// Menu zone uses hysteresis to prevent flickering at the boundary
+const MENU_ENTER_Y = 0.82;      // finger must cross going DOWN to enter menu zone
+const MENU_EXIT_Y  = 0.75;      // finger must cross going UP to leave menu zone
 
 export const GESTURE = Object.freeze({
   IDLE:   'IDLE',
@@ -54,7 +56,9 @@ const DEADZONE = 0.004; // normalised distance — ignore sub-pixel jitter
 export class GestureDetector {
   constructor() {
     // Previous output positions — used for deadzone filtering
-    this._prev = null;
+    this._prev   = null;
+    // Hysteresis state for menu zone — prevents flickering at boundary
+    this._inMenu = false;
   }
 
   /**
@@ -64,7 +68,8 @@ export class GestureDetector {
    */
   detect(landmarks) {
     if (!landmarks) {
-      this._prev = null;
+      this._prev   = null;
+      this._inMenu = false;   // reset hysteresis when hand is lost
       return { gesture: GESTURE.IDLE, indexTip: null, middleTip: null, pinchMidpoint: null, scrubX: null, scrubY: null };
     }
 
@@ -85,25 +90,52 @@ export class GestureDetector {
       };
       const tip = { x: indexTip.x, y: indexTip.y };
 
-      // MENU: pinching while primary fingertip is in the bottom zone
-      if (indexTip.y > MENU_Y_THRESHOLD) {
-        result = {
-          gesture:       GESTURE.MENU,
-          indexTip:      tip,
-          middleTip:     null,
-          pinchMidpoint,
-          scrubX:        indexTip.x,
-          scrubY:        indexTip.y,
-        };
+      // MENU: pinching while in the bottom zone — hysteresis prevents flickering
+      if (this._inMenu) {
+        // Already in menu zone — stay unless hand moves clearly above exit threshold
+        if (indexTip.y < MENU_EXIT_Y) {
+          this._inMenu = false;
+          // Fall through to PINCH below
+          result = {
+            gesture:       GESTURE.PINCH,
+            indexTip:      tip,
+            middleTip:     null,
+            pinchMidpoint,
+            scrubX:        null,
+            scrubY:        null,
+          };
+        } else {
+          result = {
+            gesture:       GESTURE.MENU,
+            indexTip:      tip,
+            middleTip:     null,
+            pinchMidpoint,
+            scrubX:        indexTip.x,
+            scrubY:        null,
+          };
+        }
       } else {
-        result = {
-          gesture:       GESTURE.PINCH,
-          indexTip:      tip,
-          middleTip:     null,
-          pinchMidpoint,
-          scrubX:        null,
-          scrubY:        null,
-        };
+        // Not in menu zone — enter only if clearly below entry threshold
+        if (indexTip.y > MENU_ENTER_Y) {
+          this._inMenu = true;
+          result = {
+            gesture:       GESTURE.MENU,
+            indexTip:      tip,
+            middleTip:     null,
+            pinchMidpoint,
+            scrubX:        indexTip.x,
+            scrubY:        null,
+          };
+        } else {
+          result = {
+            gesture:       GESTURE.PINCH,
+            indexTip:      tip,
+            middleTip:     null,
+            pinchMidpoint,
+            scrubX:        null,
+            scrubY:        null,
+          };
+        }
       }
     } else {
       // ── SPREAD (or ambiguous fallback treated as SPREAD) ────────
