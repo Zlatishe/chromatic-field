@@ -19,7 +19,7 @@ import { ema } from './math-utils.js';
 // ── Constants ──────────────────────────────────────────────────
 const WASM_PATH        = '/mediapipe/wasm';
 const MODEL_PATH       = '/mediapipe/hand_landmarker.task';
-const EMA_ALPHA        = 0.3;   // smoothing (0 = frozen, 1 = raw)
+const EMA_ALPHA        = 0.18;  // smoothing (0 = frozen, 1 = raw) — reduced for stability
 const HAND_LOST_MS     = 500;   // ms before IDLE transition fires
 
 // Key landmark indices (from MediaPipe 21-point hand model)

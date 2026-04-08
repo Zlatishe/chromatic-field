@@ -427,11 +427,15 @@ export class GradientRenderer {
           const interval = st.currT - st.prevT;
           // Extrapolate slightly (up to 1.5× interval) for predictive smoothness
           const t = Math.min((now - st.prevT) / interval, 1.5);
-          src.position.x = lerp(st.prev.x, st.curr.x, t);
-          src.position.y = lerp(st.prev.y, st.curr.y, t);
+          // Dampening: lerp rendered position toward the interpolated target at 60%
+          // speed — gives colours a pleasant "weight", reduces jitter amplification
+          const targetX = lerp(st.prev.x, st.curr.x, t);
+          const targetY = lerp(st.prev.y, st.curr.y, t);
+          src.position.x = lerp(src.position.x, targetX, 0.6);
+          src.position.y = lerp(src.position.y, targetY, 0.6);
         } else {
-          src.position.x = src.basePosition.x;
-          src.position.y = src.basePosition.y;
+          src.position.x = lerp(src.position.x, src.basePosition.x, 0.6);
+          src.position.y = lerp(src.position.y, src.basePosition.y, 0.6);
         }
         return;
       }

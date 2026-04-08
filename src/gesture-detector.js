@@ -42,13 +42,21 @@ export const GESTURE = Object.freeze({
 /**
  * @typedef {Object} GestureResult
  * @property {string}           gesture       — one of GESTURE.*
- * @property {{x,y}|null}       indexTip      — index fingertip position
- * @property {{x,y}|null}       middleTip     — middle fingertip position
+ * @property {{x,y}|null}       indexTip      — index fingertip position (deadzone-filtered)
+ * @property {{x,y}|null}       middleTip     — middle fingertip position (deadzone-filtered)
  * @property {{x,y}|null}       pinchMidpoint — midpoint of thumb+index when pinching
  * @property {number|null}      scrubX        — horizontal position [0,1] for palette scrub
+ * @property {number|null}      scrubY        — vertical position [0,1] for color count scrub
  */
 
+const DEADZONE = 0.004; // normalised distance — ignore sub-pixel jitter
+
 export class GestureDetector {
+  constructor() {
+    // Previous output positions — used for deadzone filtering
+    this._prev = null;
+  }
+
   /**
    * Classify gesture from smoothed landmarks.
    * @param {Array<{x,y,z}>|null} landmarks
@@ -56,17 +64,18 @@ export class GestureDetector {
    */
   detect(landmarks) {
     if (!landmarks) {
-      return { gesture: GESTURE.IDLE, indexTip: null, middleTip: null, pinchMidpoint: null, scrubX: null };
+      this._prev = null;
+      return { gesture: GESTURE.IDLE, indexTip: null, middleTip: null, pinchMidpoint: null, scrubX: null, scrubY: null };
     }
 
     const thumbTip  = landmarks[IDX.THUMB_TIP];
     const indexTip  = landmarks[IDX.INDEX_TIP];
     const middleTip = landmarks[IDX.MIDDLE_TIP];
-    const indexMCP  = landmarks[IDX.INDEX_MCP];
-    const middleMCP = landmarks[IDX.MIDDLE_MCP];
     const wrist     = landmarks[IDX.WRIST];
 
     const pinchDist = distance(thumbTip, indexTip);
+
+    let result;
 
     // ── PINCH (and MENU sub-state) ──────────────────────────────
     if (pinchDist < PINCH_THRESHOLD) {
@@ -78,51 +87,63 @@ export class GestureDetector {
 
       // MENU: pinching while primary fingertip is in the bottom zone
       if (indexTip.y > MENU_Y_THRESHOLD) {
-        return {
+        result = {
           gesture:       GESTURE.MENU,
           indexTip:      tip,
           middleTip:     null,
           pinchMidpoint,
-          scrubX:        indexTip.x, // 0 = left palette, 1 = right palette
+          scrubX:        indexTip.x,
+          scrubY:        indexTip.y,
+        };
+      } else {
+        result = {
+          gesture:       GESTURE.PINCH,
+          indexTip:      tip,
+          middleTip:     null,
+          pinchMidpoint,
+          scrubX:        null,
+          scrubY:        null,
         };
       }
+    } else {
+      // ── SPREAD (or ambiguous fallback treated as SPREAD) ────────
+      const spreadDist    = distance(indexTip, middleTip);
+      const indexExtended = isExtended(landmarks[IDX.INDEX_TIP], landmarks[IDX.INDEX_MCP], wrist);
 
-      return {
-        gesture:       GESTURE.PINCH,
-        indexTip:      tip,
-        middleTip:     null,
-        pinchMidpoint,
-        scrubX:        null,
-      };
-    }
-
-    // ── SPREAD ─────────────────────────────────────────────────
-    const spreadDist     = distance(indexTip, middleTip);
-    const indexExtended  = isExtended(landmarks[IDX.INDEX_TIP],  landmarks[IDX.INDEX_MCP],  wrist);
-    const middleExtended = isExtended(landmarks[IDX.MIDDLE_TIP], landmarks[IDX.MIDDLE_MCP], wrist);
-
-    // Accept as SPREAD if: fingers are apart enough AND at least index is extended.
-    // (Middle extended check is softer to be more forgiving in practice.)
-    if (spreadDist > SPREAD_THRESHOLD && indexExtended) {
-      return {
+      result = {
         gesture:       GESTURE.SPREAD,
         indexTip:      { x: indexTip.x,  y: indexTip.y  },
         middleTip:     { x: middleTip.x, y: middleTip.y },
         pinchMidpoint: null,
         scrubX:        null,
+        scrubY:        null,
       };
+
+      // If not clearly spread, keep SPREAD gesture but accept same positions
+      // (provides continuity rather than snapping to IDLE on ambiguous frames)
     }
 
-    // ── Fallback: hand visible but gesture ambiguous ────────────
-    // Treat as SPREAD with current fingertip positions so the gradient
-    // keeps responding rather than snapping to IDLE.
-    return {
-      gesture:       GESTURE.SPREAD,
-      indexTip:      { x: indexTip.x,  y: indexTip.y  },
-      middleTip:     { x: middleTip.x, y: middleTip.y },
-      pinchMidpoint: null,
-      scrubX:        null,
+    // ── Deadzone: suppress micro-jitter on output positions ─────
+    // If a fingertip has barely moved since last frame, keep the previous
+    // position. This prevents sub-pixel tremor from driving the gradient.
+    if (this._prev) {
+      if (result.indexTip && this._prev.indexTip &&
+          distance(result.indexTip, this._prev.indexTip) < DEADZONE) {
+        result.indexTip = this._prev.indexTip;
+      }
+      if (result.middleTip && this._prev.middleTip &&
+          distance(result.middleTip, this._prev.middleTip) < DEADZONE) {
+        result.middleTip = this._prev.middleTip;
+      }
+    }
+
+    // Store filtered positions for next frame's deadzone check
+    this._prev = {
+      indexTip:  result.indexTip  ? { ...result.indexTip }  : null,
+      middleTip: result.middleTip ? { ...result.middleTip } : null,
     };
+
+    return result;
   }
 }
 
