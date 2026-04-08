@@ -51,6 +51,10 @@ let frameCount = 0;
 // ── Menu scrub state ──────────────────────────────────────────
 let _lastScrubIdx = -1;
 
+// ── Label timing ──────────────────────────────────────────────
+// After PINCH→SPREAD, show "NEXT PAIR" for 1s before reverting to "MOVE COLORS"
+let _nextPairUntil = 0;
+
 // ─────────────────────────────────────────────────────────────
 //  DEV FPS COUNTER  (T8.3 — stripped in production builds)
 // ─────────────────────────────────────────────────────────────
@@ -219,6 +223,11 @@ fsm.onTransition((from, to, data) => {
         renderer.grabNearestUnlocked([data.indexTip, data.middleTip]);
       }
 
+      // "NEXT PAIR" label shows for 1s when transitioning from PINCH
+      if (from === GESTURE.PINCH) {
+        _nextPairUntil = performance.now() + 1000;
+      }
+
       // Coming from MENU: palette confirmed, collapse bar
       if (from === GESTURE.MENU) {
         ui.collapseBar();
@@ -258,8 +267,11 @@ function updateOverlay(result) {
   switch (gesture) {
     case GESTURE.SPREAD:
       if (indexTip && middleTip) {
+        const spreadLabel = performance.now() < _nextPairUntil
+          ? '[ NEXT PAIR ]'
+          : '[ MOVE COLORS ]';
         overlay.setDots([
-          { ...indexTip,  label: '[ MOVE COLORS ]' },
+          { ...indexTip,  label: spreadLabel },
           { ...middleTip, label: `X: ${fmt(middleTip.x)} // Y: ${fmt(middleTip.y)}`, sublabel: true },
         ]);
         // Update positions of the currently grabbed colour sources

@@ -215,7 +215,10 @@ export class OverlayRenderer {
       ctx.shadowColor = 'transparent';
 
       if (this._labelsVisible && dot.label) {
-        this._drawLabel(ctx, dot.label, px, py, W, H, dpr);
+        this._drawLabel(ctx, dot.label, px, py, W, H, dpr, {
+          alpha:    dot.sublabel ? 0.52 : 0.82,
+          fontSize: dot.sublabel ? 9    : FONT_SIZE,
+        });
       }
     });
 
@@ -291,9 +294,11 @@ export class OverlayRenderer {
   /**
    * Draw a label, clamping it so it stays fully on-screen.
    * Prefers right+up offset; flips if it would overflow an edge.
+   * @param {object} opts  Optional overrides: { alpha, fontSize }
    */
-  _drawLabel(ctx, text, px, py, W, H, dpr) {
-    const fontSize = FONT_SIZE * dpr;
+  _drawLabel(ctx, text, px, py, W, H, dpr, opts = {}) {
+    const fontSize = (opts.fontSize ?? FONT_SIZE) * dpr;
+    const alpha    = opts.alpha ?? 0.82;
     ctx.font         = `${fontSize}px ui-monospace, Menlo, monospace`;
     ctx.textBaseline = 'middle';
 
@@ -310,7 +315,7 @@ export class OverlayRenderer {
     if (ty - fontSize < 4 * dpr)  ty = py + offset + fontSize * 0.5;
     if (ty > H - 4 * dpr)         ty = py - offset;
 
-    ctx.fillStyle = 'rgba(255,255,255,0.82)';
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
     ctx.fillText(text, tx, ty);
   }
 }
