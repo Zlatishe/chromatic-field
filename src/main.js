@@ -262,22 +262,25 @@ function updateOverlay(result) {
   }
 
   switch (gesture) {
-    case GESTURE.SPREAD:
+    case GESTURE.SPREAD: {
       if (indexTip && middleTip) {
         // Feed both fingertip positions to proximity-based grab
         renderer.updateFingerPositions([indexTip, middleTip]);
+        const bindings = renderer.getBindings();
         overlay.setDots([
-          { ...indexTip,  label: '[ MOVE COLORS ]' },
-          { ...middleTip, label: `X: ${fmt(middleTip.x)} // Y: ${fmt(middleTip.y)}`, sublabel: true },
+          { ...indexTip,  label: '[ MOVE COLORS ]', boundTo: bindings[0]?.position ?? null },
+          { ...middleTip, label: `X: ${fmt(middleTip.x)} // Y: ${fmt(middleTip.y)}`, sublabel: true, boundTo: bindings[1]?.position ?? null },
         ]);
       } else if (indexTip) {
         // Single finger visible — drag nearest colour
         renderer.updateFingerPositions([indexTip]);
+        const bindings = renderer.getBindings();
         overlay.setDots([
-          { ...indexTip, label: '[ MOVE COLOR ]' },
+          { ...indexTip, label: '[ MOVE COLOR ]', boundTo: bindings[0]?.position ?? null },
         ]);
       }
       break;
+    }
 
     case GESTURE.PINCH:
       if (pinchMidpoint) {

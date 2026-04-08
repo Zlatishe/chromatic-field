@@ -185,6 +185,28 @@ export class OverlayRenderer {
       });
     }
 
+    // ── Finger→source binding lines (R4.4) ────────────────────
+    // Draw a thin dotted line from each finger dot to its claimed colour source
+    display.forEach(dot => {
+      if (!dot.boundTo) return;
+      const fx = dot.x * W;
+      const fy = dot.y * H;
+      const sx = dot.boundTo.x * W;
+      const sy = dot.boundTo.y * H;
+      // Skip if nearly overlapping
+      if (Math.hypot(fx - sx, fy - sy) < 6 * dpr) return;
+      ctx.save();
+      ctx.setLineDash([3 * dpr, 4 * dpr]);
+      ctx.strokeStyle = `rgba(255,255,255,0.12)`;
+      ctx.lineWidth   = 0.5 * dpr;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      ctx.lineTo(sx, sy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    });
+
     // ── Connecting line ────────────────────────────────────────
     if (display.length >= 2) {
       const [a, b] = display;
