@@ -317,15 +317,17 @@ export class GradientRenderer {
     const now = performance.now();
     this._controlledIndices.forEach((srcIdx, pi) => {
       if (pi >= positions.length) return;
+      if (srcIdx >= this.sources.length) return;  // guard: stale index after resize
       const pos        = positions[pi];
+      const src        = this.sources[srcIdx];
       const prevInterp = this._interp[srcIdx];
       this._interp[srcIdx] = {
-        prev:  prevInterp ? { ...prevInterp.curr } : { ...this.sources[srcIdx].position },
+        prev:  prevInterp ? { ...prevInterp.curr } : { ...src.position },
         curr:  { ...pos },
         prevT: prevInterp?.currT ?? now,
         currT: now,
       };
-      this.sources[srcIdx].basePosition = { ...pos };
+      src.basePosition = { ...pos };
     });
   }
 
@@ -383,6 +385,7 @@ export class GradientRenderer {
    * @param {number}         duration   ms, default 400
    */
   setColorCount(newColors, duration = 400) {
+    this._controlledIndices = [];   // clear stale grabs before any resize
     const oldLen = this.sources.length;
     const newLen = newColors.length;
 
@@ -436,6 +439,7 @@ export class GradientRenderer {
    * @param {Array<{r,g,b}>} colors
    */
   setColors(colors) {
+    this._controlledIndices = [];   // clear stale grabs before any resize
     while (this.sources.length < colors.length) {
       const ref = this.sources[this.sources.length - 1];
       this.sources.push({
@@ -541,8 +545,10 @@ export class GradientRenderer {
     if (raw >= 1) {
       // Splice out departing sources after their fade animation completes
       if (trimTo !== undefined) {
-        this.sources = this.sources.slice(0, trimTo);
-        this._interp  = this._interp.slice(0, trimTo);
+        this.sources            = this.sources.slice(0, trimTo);
+        this._interp            = this._interp.slice(0, trimTo);
+        // Drop any controlled indices that pointed at now-removed sources
+        this._controlledIndices = this._controlledIndices.filter(i => i < trimTo);
       }
       this._transition = null;
     }
