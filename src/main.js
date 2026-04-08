@@ -212,6 +212,7 @@ fsm.onTransition((from, to, data) => {
       overlay.setLockedPositions([]);
       ui.collapseBar();
       ui.clearSwatchHighlight();
+      ui.setBarProximity(0);
       break;
 
     case GESTURE.SPREAD:
@@ -263,6 +264,16 @@ fsm.onTransition((from, to, data) => {
 // ═════════════════════════════════════════════════════════════
 function updateOverlay(result) {
   const { gesture, indexTip, middleTip, pinchMidpoint } = result;
+
+  // ── Proximity indicator: bar glows as hand nears the menu zone ─
+  // Approach window: y > 0.65 (35% from bottom) → 0.78 (menu threshold)
+  const primaryY = indexTip?.y ?? pinchMidpoint?.y ?? 0;
+  if (primaryY > 0.65) {
+    const proximity = Math.min((primaryY - 0.65) / (0.78 - 0.65), 1);
+    ui.setBarProximity(proximity);
+  } else {
+    ui.setBarProximity(0);
+  }
 
   switch (gesture) {
     case GESTURE.SPREAD:

@@ -303,6 +303,20 @@ export class UI {
     });
   }
 
+  /**
+   * Visually brighten the bar as the hand approaches the menu zone.
+   * Creates a "magnetic pull" that guides the user into the MENU gesture.
+   * @param {number} t — 0 (hand far) → 1 (hand at menu zone boundary)
+   */
+  setBarProximity(t) {
+    const borderAlpha = 0.12 + t * 0.18;       // 0.12 → 0.30
+    const glowAlpha   = t * 0.08;              // 0 → 0.08
+    this.bottomBar.style.borderColor = `rgba(255,255,255,${borderAlpha})`;
+    this.bottomBar.style.boxShadow   = t > 0.01
+      ? `0 0 24px 4px rgba(255,255,255,${glowAlpha})`
+      : '';
+  }
+
   /** Register the enable-camera button handler (fires at most once). */
   onEnableCamera(fn) {
     if (this._cameraListenerAttached) return;

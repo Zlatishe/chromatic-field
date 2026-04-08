@@ -30,7 +30,7 @@ const IDX = Object.freeze({
 // ── Thresholds ─────────────────────────────────────────────────
 const PINCH_THRESHOLD  = 0.05;  // normalized distance
 const SPREAD_THRESHOLD = 0.08;  // normalized distance
-const MENU_Y_THRESHOLD = 0.85;  // normalized y (0=top, 1=bottom)
+const MENU_Y_THRESHOLD = 0.78;  // normalized y — bottom 22% of screen (was 0.85 / 15%)
 
 export const GESTURE = Object.freeze({
   IDLE:   'IDLE',
