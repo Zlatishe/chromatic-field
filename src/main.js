@@ -51,10 +51,6 @@ let frameCount = 0;
 // ── Menu scrub state ──────────────────────────────────────────
 let _lastScrubIdx = -1;
 
-// ── Label timing ──────────────────────────────────────────────
-// After PINCH→SPREAD, show "NEXT PAIR" for 1s before reverting to "MOVE COLORS"
-let _nextPairUntil = 0;
-
 // ─────────────────────────────────────────────────────────────
 //  DEV FPS COUNTER  (T8.3 — stripped in production builds)
 // ─────────────────────────────────────────────────────────────
@@ -205,9 +201,8 @@ fsm.onTransition((from, to, data) => {
   switch (to) {
 
     case GESTURE.IDLE:
-      // Unlock and release — colours return to gentle drift around placed positions
-      renderer.unlockAll();
-      renderer.releaseAllSources();
+      // Release all bindings — colours drift gently around their last placed positions
+      renderer.releaseAllBindings();
       overlay.clearDots();
       overlay.setLockedPositions([]);
       ui.collapseBar();
@@ -218,16 +213,7 @@ fsm.onTransition((from, to, data) => {
     case GESTURE.SPREAD:
       // Hide loading indicator on first-ever hand detection
       ui.hideLoading();
-
-      // Grab the 2 nearest unlocked colour sources to the finger positions
-      if (data?.indexTip && data?.middleTip) {
-        renderer.grabNearestUnlocked([data.indexTip, data.middleTip]);
-      }
-
-      // "NEXT PAIR" label shows for 1s when transitioning from PINCH
-      if (from === GESTURE.PINCH) {
-        _nextPairUntil = performance.now() + 1000;
-      }
+      // Proximity grab is handled per-frame in updateOverlay — no transition action needed
 
       // Coming from MENU: palette confirmed, collapse bar
       if (from === GESTURE.MENU) {
@@ -240,8 +226,8 @@ fsm.onTransition((from, to, data) => {
     case GESTURE.PINCH:
       ui.hideLoading();
 
-      // PINCH = "stamp" — lock the currently grabbed colours at their positions
-      renderer.lockBoundSources();
+      // PINCH = "pause" — freeze all colours where they are
+      renderer.releaseAllBindings();
 
       // Coming from MENU: palette confirmed, collapse bar
       if (from === GESTURE.MENU) {
@@ -266,10 +252,10 @@ function updateOverlay(result) {
   const { gesture, indexTip, middleTip, pinchMidpoint } = result;
 
   // ── Proximity indicator: bar glows as hand nears the menu zone ─
-  // Approach window: y > 0.65 (35% from bottom) → 0.78 (menu threshold)
+  // Approach window: y > 0.68 → 0.82 (menu entry threshold)
   const primaryY = indexTip?.y ?? pinchMidpoint?.y ?? 0;
-  if (primaryY > 0.65) {
-    const proximity = Math.min((primaryY - 0.65) / (0.78 - 0.65), 1);
+  if (primaryY > 0.68) {
+    const proximity = Math.min((primaryY - 0.68) / (0.82 - 0.68), 1);
     ui.setBarProximity(proximity);
   } else {
     ui.setBarProximity(0);
@@ -278,24 +264,26 @@ function updateOverlay(result) {
   switch (gesture) {
     case GESTURE.SPREAD:
       if (indexTip && middleTip) {
-        const spreadLabel = performance.now() < _nextPairUntil
-          ? '[ NEXT PAIR ]'
-          : '[ MOVE COLORS ]';
+        // Feed both fingertip positions to proximity-based grab
+        renderer.updateFingerPositions([indexTip, middleTip]);
         overlay.setDots([
-          { ...indexTip,  label: spreadLabel },
+          { ...indexTip,  label: '[ MOVE COLORS ]' },
           { ...middleTip, label: `X: ${fmt(middleTip.x)} // Y: ${fmt(middleTip.y)}`, sublabel: true },
         ]);
-        // Update positions of the currently grabbed colour sources
-        renderer.updateControlledPositions([indexTip, middleTip]);
+      } else if (indexTip) {
+        // Single finger visible — drag nearest colour
+        renderer.updateFingerPositions([indexTip]);
+        overlay.setDots([
+          { ...indexTip, label: '[ MOVE COLOR ]' },
+        ]);
       }
       break;
 
     case GESTURE.PINCH:
       if (pinchMidpoint) {
         overlay.setDots([
-          { ...pinchMidpoint, label: '[ PLACED ]', pinch: true },
+          { ...pinchMidpoint, label: '[ PAUSED ]', pinch: true },
         ]);
-        // Colours are locked — no renderer bind needed
       }
       break;
 
@@ -304,14 +292,13 @@ function updateOverlay(result) {
         overlay.setDots([
           { ...pinchMidpoint, label: '[ SELECT PALETTE ]', pinch: true },
         ]);
-        // Colours stay locked during menu — no renderer bind
         handleMenuScrub(result.scrubX, result.scrubY);
       }
       break;
   }
 
-  // Feed locked positions to overlay every tracker frame
-  overlay.setLockedPositions(renderer.getLockedPositions());
+  // Show placed-colour ring indicators
+  overlay.setLockedPositions(renderer.getPlacedPositions());
 }
 
 // ═════════════════════════════════════════════════════════════

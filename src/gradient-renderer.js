@@ -9,6 +9,9 @@
  *  - Animated color-count change (400ms, T7.4)
  *  - Inter-frame position interpolation for bound sources (T8.2)
  *  - Ambient drift animation in IDLE state
+ *  - Proximity-based grab model (R4.2):
+ *      finger attracts nearest source within ATTRACTION_RADIUS;
+ *      moves away > RELEASE_RADIUS → source stays; no explicit lock/unlock.
  */
 
 import vertSrc2   from './shaders/gradient.vert.glsl?raw';
@@ -19,6 +22,11 @@ import { lerp, easeOut, lerpColor } from './math-utils.js';
 import { PALETTES, DEFAULT_PALETTE_INDEX, DEFAULT_COLOR_COUNT } from './palettes.js';
 
 const MAX_SOURCES = 5;
+
+// Proximity-based grab constants (R4.2)
+const ATTRACTION_RADIUS = 0.25;  // finger claims nearest source within this distance
+const RELEASE_RADIUS    = 0.30;  // binding breaks when finger is this far from source
+const SWITCH_RATIO      = 0.65;  // must be this much closer to a new source to switch
 
 // Default initial positions for color sources — spread evenly around screen
 const INITIAL_POSITIONS = [
@@ -51,8 +59,7 @@ export class GradientRenderer {
     /**
      * @type {Array<{
      *   basePosition:{x,y}, position:{x,y}, color:{r,g,b},
-     *   bound:boolean,   // currently driven by a finger
-     *   locked:boolean   // placed by user — gentle drift around locked position
+     *   bound:boolean   // currently driven by a finger (proximity grab)
      * }>}
      */
     this.sources = [];
@@ -65,8 +72,9 @@ export class GradientRenderer {
     // Per source: { prev:{x,y}, curr:{x,y}, prevT:ms, currT:ms }
     this._interp = [];
 
-    // Indices of sources currently controlled by the user's fingers
-    this._controlledIndices = [];
+    // Per-finger binding: which source index is claimed by which finger
+    // { sourceIdx } or null  (max 2 fingers: index=0, middle=1)
+    this._fingerBindings = [null, null];
 
     this.startTime    = performance.now();
     this._animHandle  = null;
@@ -173,10 +181,9 @@ export class GradientRenderer {
       position:     { ...INITIAL_POSITIONS[i] },
       color:        { ...color },
       bound:        false,
-      locked:       false,
     }));
-    this._interp            = this.sources.map(() => null);
-    this._controlledIndices = [];
+    this._interp         = this.sources.map(() => null);
+    this._fingerBindings = [null, null];
   }
 
   // ── Public API ─────────────────────────────────────────────────
@@ -185,6 +192,7 @@ export class GradientRenderer {
    * Bind N sources to hand positions (screen-space normalized [0,1]).
    * Stores previous + new position with timestamps for inter-frame
    * interpolation (T8.2) — smooths 15 fps tracking onto 60 fps render.
+   * Used by mouse-test fallback in main.js.
    * @param {Array<{x:number, y:number}>} positions
    */
   bindSources(positions) {
@@ -210,149 +218,164 @@ export class GradientRenderer {
   /** Release all bound sources back to ambient drift. */
   releaseAllSources() {
     this.sources.forEach((s, i) => {
-      s.bound      = false;
+      s.bound         = false;
       this._interp[i] = null;
     });
   }
 
-  /**
-   * Release sources from index `start` onwards (leave 0..start-1 bound).
-   * @param {number} start
-   */
-  releaseSourcesFrom(start) {
-    for (let i = start; i < this.sources.length; i++) {
-      this.sources[i].bound = false;
-      this._interp[i]       = null;
-    }
-  }
-
-  // ── Lock-and-release model (R3.2) ─────────────────────────────
+  // ── Proximity-based grab model (R4.2) ─────────────────────────
 
   /**
-   * Lock all currently bound (finger-controlled) sources at their current
-   * rendered positions. They switch to gentle "locked" drift around where
-   * the user placed them instead of returning to their default positions.
-   * Called on PINCH gesture = "stamp this colour here".
+   * Per-frame update from SPREAD gesture.
+   * Each finger position attracts the nearest unclaimed source within
+   * ATTRACTION_RADIUS. Binding breaks automatically when finger moves
+   * beyond RELEASE_RADIUS from the claimed source.
+   * @param {Array<{x:number,y:number}>} fingerPositions — 1 or 2 positions
    */
-  lockBoundSources() {
-    this._controlledIndices.forEach(idx => {
-      const src = this.sources[idx];
-      src.locked       = true;
-      src.bound        = false;
-      // Freeze base at current rendered position so drift oscillates around it
-      src.basePosition = { ...src.position };
-      this._interp[idx] = null;
-    });
-    this._controlledIndices = [];
-  }
+  updateFingerPositions(fingerPositions) {
+    const now     = performance.now();
+    const claimed = new Set();  // source indices claimed this frame
 
-  /**
-   * Find the 2 nearest unlocked sources to the given finger positions and
-   * bind them so they follow those fingers. If all sources are locked,
-   * the nearest 2 are unlocked and grabbed instead.
-   * Called on SPREAD gesture = "grab next pair of colours".
-   * @param {Array<{x:number,y:number}>} positions — one per finger (max 2)
-   */
-  grabNearestUnlocked(positions) {
-    // Release any stale bound state from previous interaction
-    this.sources.forEach((s, i) => {
-      if (s.bound) { s.bound = false; this._interp[i] = null; }
-    });
-    this._controlledIndices = [];
+    fingerPositions.forEach((pos, fi) => {
+      const binding = this._fingerBindings[fi];
 
-    // Collect unlocked sources
-    let available = this.sources
-      .map((s, i) => ({ s, i }))
-      .filter(({ s }) => !s.locked);
+      if (binding !== null) {
+        if (binding.sourceIdx >= this.sources.length) {
+          // Stale index — release silently
+          this._fingerBindings[fi] = null;
+        } else {
+          const src     = this.sources[binding.sourceIdx];
+          const curDist = Math.hypot(src.position.x - pos.x, src.position.y - pos.y);
 
-    // If not enough unlocked sources, release the locked ones nearest to fingers
-    if (available.length < positions.length) {
-      // Unlock all as fallback — user can always regain control
-      this.sources.forEach((s, i) => {
-        s.locked       = false;
-        s.basePosition = { ...INITIAL_POSITIONS[i] };
-      });
-      available = this.sources.map((s, i) => ({ s, i }));
-    }
+          if (curDist > RELEASE_RADIUS) {
+            // Finger moved too far — release, fall through to find new source
+            this._releaseBinding(fi);
+          } else {
+            // Check if a much-closer unclaimed source exists (prevent switch jitter)
+            let nearerIdx  = -1;
+            let nearerDist = curDist * SWITCH_RATIO;
+            this.sources.forEach((s, si) => {
+              if (si === binding.sourceIdx || claimed.has(si)) return;
+              const d = Math.hypot(s.position.x - pos.x, s.position.y - pos.y);
+              if (d < nearerDist) { nearerDist = d; nearerIdx = si; }
+            });
 
-    // Greedy nearest-neighbour match: each position claims nearest available source
-    const now  = performance.now();
-    const used = new Set();
+            if (nearerIdx >= 0) {
+              // Switch to the significantly closer source
+              this._releaseBinding(fi);
+              this._claimSource(fi, nearerIdx, pos, now);
+            } else {
+              // Keep current binding
+              this._updateBoundSource(binding.sourceIdx, pos, now);
+            }
+            claimed.add(this._fingerBindings[fi]?.sourceIdx ?? binding.sourceIdx);
+            return;
+          }
+        }
+      }
 
-    positions.forEach((pos, pi) => {
+      // No current binding (or just released) — find nearest unclaimed within radius
       let bestIdx  = -1;
-      let bestDist = Infinity;
-      available.forEach(({ s, i }) => {
-        if (used.has(i)) return;
+      let bestDist = ATTRACTION_RADIUS;
+      this.sources.forEach((s, si) => {
+        if (claimed.has(si)) return;
         const d = Math.hypot(s.position.x - pos.x, s.position.y - pos.y);
-        if (d < bestDist) { bestDist = d; bestIdx = i; }
+        if (d < bestDist) { bestDist = d; bestIdx = si; }
       });
 
-      if (bestIdx < 0) return;
-      used.add(bestIdx);
-      this._controlledIndices.push(bestIdx);
-
-      const src = this.sources[bestIdx];
-      src.bound  = true;
-      src.locked = false;
-
-      // Bootstrap interpolation from current rendered position to first target
-      const prevInterp = this._interp[bestIdx];
-      this._interp[bestIdx] = {
-        prev:  prevInterp ? { ...prevInterp.curr } : { ...src.position },
-        curr:  { ...pos },
-        prevT: prevInterp?.currT ?? now,
-        currT: now,
-      };
-      src.basePosition = { ...pos };
+      if (bestIdx >= 0) {
+        this._claimSource(fi, bestIdx, pos, now);
+        claimed.add(bestIdx);
+      }
     });
+
+    // Release fingers beyond the provided count
+    for (let fi = fingerPositions.length; fi < this._fingerBindings.length; fi++) {
+      if (this._fingerBindings[fi] !== null) this._releaseBinding(fi);
+    }
   }
 
   /**
-   * Update positions of the currently grabbed (controlled) sources.
-   * Called every tracker frame while in SPREAD state.
-   * @param {Array<{x:number,y:number}>} positions — matched to controlledIndices order
+   * Claim a source for a finger. Sets up binding and interpolation state.
+   * @private
    */
-  updateControlledPositions(positions) {
-    const now = performance.now();
-    this._controlledIndices.forEach((srcIdx, pi) => {
-      if (pi >= positions.length) return;
-      if (srcIdx >= this.sources.length) return;  // guard: stale index after resize
-      const pos        = positions[pi];
-      const src        = this.sources[srcIdx];
-      const prevInterp = this._interp[srcIdx];
-      this._interp[srcIdx] = {
-        prev:  prevInterp ? { ...prevInterp.curr } : { ...src.position },
-        curr:  { ...pos },
-        prevT: prevInterp?.currT ?? now,
-        currT: now,
-      };
-      src.basePosition = { ...pos };
-    });
+  _claimSource(fingerIdx, sourceIdx, pos, now) {
+    const src = this.sources[sourceIdx];
+    src.bound = true;
+    this._fingerBindings[fingerIdx] = { sourceIdx };
+    const prevInterp = this._interp[sourceIdx];
+    this._interp[sourceIdx] = {
+      prev:  prevInterp ? { ...prevInterp.curr } : { ...src.position },
+      curr:  { ...pos },
+      prevT: prevInterp?.currT ?? now,
+      currT: now,
+    };
+    src.basePosition = { ...pos };
   }
 
   /**
-   * Unlock all sources (remove locked + bound state).
-   * Called on IDLE — sources return to ambient drift around their
-   * last placed positions (basePosition is preserved, not reset).
+   * Release a finger's binding. Source stays at its last position and drifts.
+   * @private
    */
-  unlockAll() {
-    this.sources.forEach(s => {
-      s.locked = false;
-      s.bound  = false;
-    });
-    this._interp            = this._interp.map(() => null);
-    this._controlledIndices = [];
+  _releaseBinding(fingerIdx) {
+    const binding = this._fingerBindings[fingerIdx];
+    if (!binding) return;
+    const src = this.sources[binding.sourceIdx];
+    if (src) {
+      src.bound = false;
+      // basePosition stays at last finger position — source drifts gently around it
+    }
+    this._interp[binding.sourceIdx] = null;
+    this._fingerBindings[fingerIdx]  = null;
   }
 
   /**
-   * Return positions of all locked (but not currently grabbed) sources.
-   * Used by the overlay to draw faint ring indicators.
+   * Update the position of an already-bound source.
+   * @private
+   */
+  _updateBoundSource(sourceIdx, pos, now) {
+    const prevInterp = this._interp[sourceIdx];
+    this._interp[sourceIdx] = {
+      prev:  prevInterp ? { ...prevInterp.curr } : { ...this.sources[sourceIdx].position },
+      curr:  { ...pos },
+      prevT: prevInterp?.currT ?? now,
+      currT: now,
+    };
+    this.sources[sourceIdx].basePosition = { ...pos };
+  }
+
+  /**
+   * Release all finger bindings. Called on PINCH (pause) and IDLE (hand lost).
+   * Colours stay at their last placed positions.
+   */
+  releaseAllBindings() {
+    this._fingerBindings.forEach((_, fi) => this._releaseBinding(fi));
+  }
+
+  /**
+   * Return current binding info: [{ sourceIdx, position } | null, ...]
+   * One entry per finger slot. Used by overlay to draw finger→source lines.
+   * @returns {Array<{sourceIdx:number, position:{x,y}} | null>}
+   */
+  getBindings() {
+    return this._fingerBindings.map(b => {
+      if (!b) return null;
+      const src = this.sources[b.sourceIdx];
+      if (!src) return null;
+      return { sourceIdx: b.sourceIdx, position: { x: src.position.x, y: src.position.y } };
+    });
+  }
+
+  /**
+   * Return positions of sources that were placed by the user (moved from initial).
+   * Used by the overlay to draw faint ring indicators at placed colours.
    * @returns {Array<{x:number,y:number}>}
    */
-  getLockedPositions() {
+  getPlacedPositions() {
     return this.sources
-      .filter(s => s.locked && !s.bound)
+      .filter((s, i) => !s.bound &&
+        Math.hypot(s.basePosition.x - INITIAL_POSITIONS[i].x,
+                   s.basePosition.y - INITIAL_POSITIONS[i].y) > 0.05)
       .map(s => ({ x: s.position.x, y: s.position.y }));
   }
 
@@ -385,7 +408,7 @@ export class GradientRenderer {
    * @param {number}         duration   ms, default 400
    */
   setColorCount(newColors, duration = 400) {
-    this._controlledIndices = [];   // clear stale grabs before any resize
+    this.releaseAllBindings();   // clear grabs before any resize
     const oldLen = this.sources.length;
     const newLen = newColors.length;
 
@@ -404,7 +427,6 @@ export class GradientRenderer {
           position:     { ...ref.position },      // start co-located
           color:        { ...ref.color },          // start same color
           bound:        false,
-          locked:       false,
         });
         this._interp.push(null);
       }
@@ -439,7 +461,7 @@ export class GradientRenderer {
    * @param {Array<{r,g,b}>} colors
    */
   setColors(colors) {
-    this._controlledIndices = [];   // clear stale grabs before any resize
+    this.releaseAllBindings();   // clear grabs before any resize
     while (this.sources.length < colors.length) {
       const ref = this.sources[this.sources.length - 1];
       this.sources.push({
@@ -447,7 +469,6 @@ export class GradientRenderer {
         position:     { ...ref.position },
         color:        { ...ref.color },
         bound:        false,
-        locked:       false,
       });
       this._interp.push(null);
     }
@@ -545,10 +566,12 @@ export class GradientRenderer {
     if (raw >= 1) {
       // Splice out departing sources after their fade animation completes
       if (trimTo !== undefined) {
-        this.sources            = this.sources.slice(0, trimTo);
-        this._interp            = this._interp.slice(0, trimTo);
-        // Drop any controlled indices that pointed at now-removed sources
-        this._controlledIndices = this._controlledIndices.filter(i => i < trimTo);
+        this.sources = this.sources.slice(0, trimTo);
+        this._interp = this._interp.slice(0, trimTo);
+        // Release any finger bindings that pointed at now-removed sources
+        this._fingerBindings.forEach((b, fi) => {
+          if (b && b.sourceIdx >= trimTo) this._releaseBinding(fi);
+        });
       }
       this._transition = null;
     }
@@ -561,7 +584,10 @@ export class GradientRenderer {
    *   positions received from MediaPipe to fill the gap between tracker
    *   frames (~15 fps) within the 60 fps render loop.
    *
-   * Unbound sources: sinusoidal ambient drift around their base position.
+   * Unbound sources: gentle sinusoidal ambient drift at half amplitude
+   *   around their basePosition. For placed colours, basePosition is the
+   *   last finger position — they breathe in place. For untouched colours,
+   *   basePosition is their initial spread position.
    *
    * @param {number} time — elapsed seconds since start
    * @param {number} now  — performance.now() ms
@@ -574,7 +600,7 @@ export class GradientRenderer {
           const interval = st.currT - st.prevT;
           // Extrapolate slightly (up to 1.5× interval) for predictive smoothness
           const t = Math.min((now - st.prevT) / interval, 1.5);
-          // Dampening: lerp rendered position toward the interpolated target at 60%
+          // Dampening: lerp rendered position toward interpolated target at 60%
           // speed — gives colours a pleasant "weight", reduces jitter amplification
           const targetX = lerp(st.prev.x, st.curr.x, t);
           const targetY = lerp(st.prev.y, st.curr.y, t);
@@ -587,19 +613,12 @@ export class GradientRenderer {
         return;
       }
 
-      const dp = DRIFT_PARAMS[i] ?? DRIFT_PARAMS[0];
-
-      if (src.locked) {
-        // Locked: gentle drift at half amplitude around the placed position
-        // Gives a "breathing" quality while staying near where user placed it
-        src.position.x = src.basePosition.x + Math.sin(time * dp.sx + dp.px) * (dp.amp * 0.5);
-        src.position.y = src.basePosition.y + Math.cos(time * dp.sy + dp.py) * (dp.amp * 0.5);
-        return;
-      }
-
-      // Ambient drift — full amplitude around initial/last-known base position
-      src.position.x = src.basePosition.x + Math.sin(time * dp.sx + dp.px) * dp.amp;
-      src.position.y = src.basePosition.y + Math.cos(time * dp.sy + dp.py) * dp.amp;
+      // Unbound: gentle ambient drift at half amplitude around basePosition.
+      // Half amplitude keeps placed colours visually stable at their spot.
+      const dp  = DRIFT_PARAMS[i] ?? DRIFT_PARAMS[0];
+      const amp = dp.amp * 0.5;
+      src.position.x = src.basePosition.x + Math.sin(time * dp.sx + dp.px) * amp;
+      src.position.y = src.basePosition.y + Math.cos(time * dp.sy + dp.py) * amp;
     });
   }
 }
